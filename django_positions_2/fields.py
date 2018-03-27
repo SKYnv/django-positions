@@ -1,67 +1,49 @@
-import datetime
-import warnings
-
 from django.db import models
 from django.db.models.signals import post_delete, post_save, pre_delete
-
-try:
-    from django.utils.timezone import now
-except ImportError:
-    now = datetime.datetime.now
+from django.utils.timezone import now
 
 # define basestring for python 3
-try:
-    basestring
-except NameError:
-    basestring = (str, bytes)
+basestring = (str, bytes)
 
 
 class PositionField(models.IntegerField):
-    def __init__(self, verbose_name=None, name=None, default=-1, collection=None, parent_link=None, unique_for_field=None, unique_for_fields=None, *args, **kwargs):
+    def __init__(self, verbose_name=None, name=None, default=-1, collection=None, parent_link=None, *args, **kwargs):
         if 'unique' in kwargs:
             raise TypeError("%s can't have a unique constraint." % self.__class__.__name__)
+
         super(PositionField, self).__init__(verbose_name, name, default=default, *args, **kwargs)
-
-        # Backwards-compatibility mess begins here.
-        if collection is not None and unique_for_field is not None:
-            raise TypeError("'collection' and 'unique_for_field' are incompatible arguments.")
-
-        if collection is not None and unique_for_fields is not None:
-            raise TypeError("'collection' and 'unique_for_fields' are incompatible arguments.")
-
-        if unique_for_field is not None:
-            warnings.warn("The 'unique_for_field' argument is deprecated.  Please use 'collection' instead.", DeprecationWarning)
-            if unique_for_fields is not None:
-                raise TypeError("'unique_for_field' and 'unique_for_fields' are incompatible arguments.")
-            collection = unique_for_field
-
-        if unique_for_fields is not None:
-            warnings.warn("The 'unique_for_fields' argument is deprecated.  Please use 'collection' instead.", DeprecationWarning)
-            collection = unique_for_fields
-        # Backwards-compatibility mess ends here.
 
         if isinstance(collection, basestring):
             collection = (collection,)
+
         self.collection = collection
         self.parent_link = parent_link
-        self._collection_changed =  None
+        self._collection_changed = None
 
-    def contribute_to_class(self, cls, name):
-        super(PositionField, self).contribute_to_class(cls, name)
+    def get_cache_name(self):
+        return '_%s_cache' % self.name
+
+    def contribute_to_class(self, cls, name, **kwargs):
+        super(PositionField, self).contribute_to_class(cls, name, **kwargs)
+
         for constraint in cls._meta.unique_together:
             if self.name in constraint:
                 raise TypeError("%s can't be part of a unique constraint." % self.__class__.__name__)
+
         self.auto_now_fields = []
+
         for field in cls._meta.fields:
             if getattr(field, 'auto_now', False):
                 self.auto_now_fields.append(field)
+
         setattr(cls, self.name, self)
+
         pre_delete.connect(self.prepare_delete, sender=cls)
         post_delete.connect(self.update_on_delete, sender=cls)
         post_save.connect(self.update_on_save, sender=cls)
 
     def pre_save(self, model_instance, add):
-        #NOTE: check if the node has been moved to another collection; if it has, delete it from the old collection.
+        # NOTE: check if the node has been moved to another collection; if it has, delete it from the old collection.
         previous_instance = None
         collection_changed = False
         if not add and self.collection is not None:
@@ -155,7 +137,7 @@ class PositionField(models.IntegerField):
         else:
             updated = value
 
-        instance.__dict__[self.name] = value # Django 1.10 fix for deferred fields        
+        instance.__dict__[self.name] = value  # Django 1.10 fix for deferred fields
         setattr(instance, cache_name, (current, updated))
 
     def get_collection(self, instance):
@@ -179,8 +161,9 @@ class PositionField(models.IntegerField):
         Returns the next sibling of this instance.
         """
         try:
-            return self.get_collection(instance).filter(**{'%s__gt' % self.name: getattr(instance, self.get_cache_name())[0]})[0]
-        except:
+            kwargs = {'%s__gt' % self.name: getattr(instance, self.get_cache_name())[0]}
+            return self.get_collection(instance).filter(**kwargs)[0]
+        except Exception:
             return None
 
     def remove_from_collection(self, instance):
@@ -209,7 +192,7 @@ class PositionField(models.IntegerField):
         if next_sibling_pk:
             try:
                 next_sibling = type(instance)._default_manager.get(pk=next_sibling_pk)
-            except:
+            except Exception:
                 next_sibling = None
             if next_sibling:
                 queryset = self.get_collection(next_sibling)
@@ -257,9 +240,3 @@ class PositionField(models.IntegerField):
 
         queryset.update(**updates)
         setattr(instance, self.get_cache_name(), (updated, None))
-
-    def south_field_triple(self):
-        from south.modelsinspector import introspector
-        field_class = "django.db.models.fields.IntegerField"
-        args, kwargs = introspector(self)
-        return (field_class, args, kwargs)

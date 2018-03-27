@@ -3,8 +3,11 @@ Django Positions
 ================
 
 
-.. image:: https://travis-ci.org/jpwatts/django-positions.svg?branch=master
-    :target: https://travis-ci.org/jpwatts/django-positions
+.. image:: https://travis-ci.org/nyankiyoshi/django-positions.svg?branch=master
+    :target: https://travis-ci.org/nyankiyoshi/django-positions
+
+.. image:: https://badge.fury.io/py/django-positions-2.svg
+    :target: https://pypi.org/project/django-positions-2
 
 
 This module provides ``PositionField``, a model field for `Django`_ that allows
